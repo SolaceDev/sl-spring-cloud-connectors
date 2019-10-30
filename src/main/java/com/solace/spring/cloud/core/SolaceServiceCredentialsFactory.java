@@ -23,6 +23,7 @@ import com.solace.services.core.model.SolaceServiceCredentialsImpl;
 import io.pivotal.cfenv.core.CfEnv;
 import io.pivotal.cfenv.core.CfService;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -40,21 +41,36 @@ public class SolaceServiceCredentialsFactory {
 	private static final String solacePubSubLabel = "solace-pubsub";
 	private static final String solacePubSubTag = "solace-pubsub";
 
-	@SuppressWarnings("unchecked")
-	public static SolaceServiceCredentials getFromCloudFoundry() throws NoSolaceServiceFoundException {
+	/**
+	 * Loads the service credentials from all detected Solace PubSub+ services in the current cloud foundry environment
+	 * @return a non-null list of solace service credentials. This list will be empty if no PubSub+ services are detected
+	 */
+	public static List<SolaceServiceCredentials> getAllFromCloudFoundry() {
 		CfEnv cfEnv = new CfEnv();
 
-		CfService service;
-		try {
-			service = cfEnv.findServiceByLabel(solacePubSubLabel);
-		} catch (IllegalArgumentException exceptionLabel) {
-			try {
-				service = cfEnv.findServiceByTag(solacePubSubTag);
-			} catch (IllegalArgumentException exceptionTag) {
-				throw new NoSolaceServiceFoundException("No Solace PubSub+ service could be found in the current cloud foundry environment. Service should have label " + solacePubSubLabel + " or have tag " + solacePubSubTag);
+		List<CfService> services = new ArrayList<>(cfEnv.findServicesByLabel(solacePubSubLabel));
+
+		// Some services have both the pubsub label and tag, ensure we do not have duplicates
+		for (CfService serviceA : cfEnv.findServicesByTag(solacePubSubTag)) {
+			boolean unique = true;
+			for (CfService serviceB : services) {
+				if (serviceA.getName().equals(serviceB.getName())) {
+					unique = false;
+				}
 			}
+			if (unique) services.add(serviceA);
 		}
 
+		List<SolaceServiceCredentials> credentials = new ArrayList<>();
+		for (CfService service : services) {
+			credentials.add(loadServiceCredentials(service));
+		}
+
+		return credentials;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static SolaceServiceCredentials loadServiceCredentials(CfService service) {
 		SolaceServiceCredentialsImpl credentials = new SolaceServiceCredentialsImpl();
 		credentials.setId(service.getName());
 
